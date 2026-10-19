@@ -63,13 +63,16 @@ class _DiscoveryMarkerState extends State<DiscoveryMarker>
                   child: Container(
                     width: 34,
                     height: 34,
-                    decoration: [
-                      BoxShadow(
-                        color: scheme.glow.withValues(alpha: glow),
-                        blurRadius: widget.selected ? 26 : 18,
-                        spreadRadius: widget.selected ? 5 : 2,
-                      ),
-                    ],
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: scheme.glow.withValues(alpha: glow),
+                          blurRadius: widget.selected ? 26 : 18,
+                          spreadRadius: widget.selected ? 5 : 2,
+                        ),
+                      ],
+                    ),
                     child: child,
                   ),
                 );

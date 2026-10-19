@@ -1,5 +1,4 @@
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// Looping ambient sound for the forest.
@@ -12,7 +11,7 @@ import 'package:flutter/widgets.dart';
 /// user gesture is blocked by the browser, and a silent nature app is still
 /// a better experience than a crashed one. The next tap on the toggle will
 /// start the ambience.
-class AmbientSoundscape extends ChangeNotifier {
+class AmbientSoundscape extends ChangeNotifier with WidgetsBindingObserver {
   AmbientSoundscape._() {
     _player.setReleaseMode(ReleaseMode.loop);
   }

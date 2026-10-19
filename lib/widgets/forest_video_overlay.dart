@@ -17,7 +17,7 @@ class ForestVideoOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(gradient: gradient),
-      child: child == null ? const SizedBox.expand() : child,
+      child: child ?? const SizedBox.expand(),
     );
   }
 }
