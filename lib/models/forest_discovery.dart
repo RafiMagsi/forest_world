@@ -48,7 +48,8 @@ class ForestDiscovery {
         'the paths were drawn. Its branches hold the quiet of centuries.',
     species: 'Oak',
     status: 'Thriving',
-    didYouKnow: 'A single oak can host hundreds of species, from insects '
+    didYouKnow:
+        'A single oak can host hundreds of species, from insects '
         'and birds to fungi and mosses. Oaks support diverse woodland '
         'ecosystems.',
     videoAsset: 'assets/videos/ancient_oak.mp4',
@@ -67,7 +68,8 @@ class ForestDiscovery {
         'lost.',
     species: 'Freshwater',
     status: 'Flowing',
-    didYouKnow: 'Forest streams filter water naturally; every kilometre of '
+    didYouKnow:
+        'Forest streams filter water naturally; every kilometre of '
         'healthy stream can cool the surrounding air by several degrees.',
     videoAsset: 'assets/videos/forest_stream.mp4',
     markerPosition: Offset(0.68, 0.52),
@@ -84,7 +86,8 @@ class ForestDiscovery {
         'footsteps. The forest never sleeps; it only softens its voice.',
     species: 'Mixed fauna',
     status: 'Active at dawn',
-    didYouKnow: 'Many woodland birds sing loudest just before sunrise, a '
+    didYouKnow:
+        'Many woodland birds sing loudest just before sunrise, a '
         'chorus known as the dawn effect.',
     videoAsset: 'assets/videos/forest_home.mp4',
     markerPosition: Offset(0.44, 0.68),

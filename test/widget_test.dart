@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:forest_os/main.dart';
 import 'package:forest_os/models/forest_discovery.dart';
 import 'package:forest_os/screens/forest_home_screen.dart';
+import 'package:forest_os/screens/map_screen.dart';
+import 'package:forest_os/screens/my_forest_screen.dart';
 import 'package:forest_os/widgets/discovery_marker.dart';
 import 'package:forest_os/widgets/forest_bottom_nav.dart';
 import 'package:forest_os/widgets/forest_pulse_card.dart';
@@ -15,77 +17,78 @@ void usePhoneViewport(WidgetTester tester) {
   addTearDown(tester.view.reset);
 }
 
-/// Videos and markers animate forever, so advance time explicitly instead
-/// of using pumpAndSettle.
+/// Videos, fireflies and markers animate forever, so advance time
+/// explicitly instead of using pumpAndSettle.
 Future<void> pumpFrames(WidgetTester tester, [int ms = 1500]) async {
   await tester.pump();
   await tester.pump(Duration(milliseconds: ms));
+}
+
+Future<void> enterForest(WidgetTester tester) async {
+  await tester.pumpWidget(const ForestOSApp());
+  await pumpFrames(tester, 2500); // let the home entrance finish
+  await tester.tap(find.text('Enter the Forest'));
+  await pumpFrames(tester, 2000);
 }
 
 void main() {
   testWidgets('home screen shows the living forest hero', (tester) async {
     usePhoneViewport(tester);
     await tester.pumpWidget(const ForestOSApp());
-    await pumpFrames(tester);
+    await pumpFrames(tester, 2500);
 
     expect(find.byType(ForestHomeScreen), findsOneWidget);
-    expect(find.text('FORESTOS'), findsOneWidget);
-    expect(find.textContaining('A quieter'), findsOneWidget);
+    expect(find.bySemanticsLabel('ForestOS'), findsOneWidget);
+    expect(find.bySemanticsLabel('A quieter world awaits.'), findsOneWidget);
     expect(find.text('Enter the Forest'), findsOneWidget);
     expect(find.byType(ForestPulseCard), findsOneWidget);
     expect(find.text('128'), findsOneWidget); // count-up lands on sample data
     expect(find.byType(ForestBottomNav), findsOneWidget);
-    expect(find.text('Flutter Demo Home Page'), findsNothing);
   });
 
-  testWidgets('Enter the Forest opens the aerial Explore screen',
-      (tester) async {
+  testWidgets('Enter the Forest opens the aerial Explore screen', (
+    tester,
+  ) async {
     usePhoneViewport(tester);
-    await tester.pumpWidget(const ForestOSApp());
-    await pumpFrames(tester);
+    await enterForest(tester);
 
-    await tester.tap(find.text('Enter the Forest'));
-    await pumpFrames(tester, 1200);
-
-    expect(find.text('Whispering Woods'), findsOneWidget);
+    expect(find.bySemanticsLabel('Whispering Woods'), findsOneWidget);
     expect(find.text('A forest full of stories.'), findsOneWidget);
     expect(find.byType(DiscoveryMarker), findsNWidgets(3));
+    // Carousel stories.
     expect(find.text('The Ancient Oak'), findsOneWidget);
     expect(find.text('The Hidden Stream'), findsOneWidget);
-    expect(find.text('Woodland Wildlife'), findsOneWidget);
   });
 
-  testWidgets('tapping a marker slides up its discovery card',
-      (tester) async {
+  testWidgets('tapping a marker brings its story forward', (tester) async {
     usePhoneViewport(tester);
-    await tester.pumpWidget(const ForestOSApp());
-    await pumpFrames(tester);
+    await enterForest(tester);
 
-    await tester.tap(find.text('Enter the Forest'));
+    // Select the stream pin: its name chip appears and the carousel follows.
+    await tester.tap(find.bySemanticsLabel('Discover The Hidden Stream'));
     await pumpFrames(tester, 1200);
 
-    await tester.tap(find.byType(DiscoveryMarker).first);
-    await pumpFrames(tester, 800);
-
+    final marker = tester.widget<DiscoveryMarker>(
+      find.byWidgetPredicate(
+        (w) => w is DiscoveryMarker && w.label == 'The Hidden Stream',
+      ),
+    );
+    expect(marker.selected, isTrue);
+    // Marker chip + carousel card title.
+    expect(find.text('The Hidden Stream'), findsNWidgets(2));
     expect(
-      find.text('A living landmark of the Whispering Woods.'),
+      find.text('Cold water running softly between the roots.'),
       findsOneWidget,
     );
-    expect(find.text('The Ancient Oak'), findsWidgets); // marker chip + row
   });
 
-  testWidgets('a discovery opens its detail and can be saved',
-      (tester) async {
+  testWidgets('a discovery opens its detail and can be saved', (tester) async {
     usePhoneViewport(tester);
-    await tester.pumpWidget(const ForestOSApp());
-    await pumpFrames(tester);
+    await enterForest(tester);
 
-    await tester.tap(find.text('Enter the Forest'));
-    await pumpFrames(tester, 1200);
-
-    // Open the Ancient Oak detail from the DISCOVER list.
+    // Open the Ancient Oak story from the carousel.
     await tester.tap(find.text('The Ancient Oak'));
-    await pumpFrames(tester, 1400);
+    await pumpFrames(tester, 2000);
 
     expect(find.text('THE FOREST GIANT'), findsOneWidget);
     expect(find.text('SPECIES'), findsOneWidget);
@@ -98,19 +101,16 @@ void main() {
       scrollable: find.byType(Scrollable),
     );
     await pumpFrames(tester, 500);
-    expect(find.text('Save Discovery'), findsOneWidget);
 
-    // Save it.
     await tester.tap(find.text('Save Discovery'));
     await pumpFrames(tester, 600);
     expect(find.text('Saved to My Forest'), findsOneWidget);
     expect(SavedForestStore.instance.isSaved('ancient_oak'), isTrue);
 
     // Clear the confirmation snackbar so it cannot cover the button.
-    final messenger = tester.state<ScaffoldMessengerState>(
-      find.byType(ScaffoldMessenger),
-    );
-    messenger.clearSnackBars();
+    tester
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger))
+        .clearSnackBars();
     await pumpFrames(tester, 800);
 
     // Unsave to keep the singleton store clean for other runs.
@@ -118,6 +118,21 @@ void main() {
     await pumpFrames(tester, 600);
     expect(find.text('Save Discovery'), findsOneWidget);
     expect(SavedForestStore.instance.isSaved('ancient_oak'), isFalse);
+  });
+
+  testWidgets('bottom nav switches between tabs', (tester) async {
+    usePhoneViewport(tester);
+    await enterForest(tester);
+
+    await tester.tap(find.bySemanticsLabel('Map'));
+    await pumpFrames(tester, 1500);
+    expect(find.byType(MapScreen), findsOneWidget);
+    expect(find.bySemanticsLabel('The living map'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('My Forest'));
+    await pumpFrames(tester, 1500);
+    expect(find.byType(MyForestScreen), findsOneWidget);
+    expect(find.text('Your forest is quiet yet'), findsOneWidget);
   });
 
   test('saved store toggles discoveries', () {

@@ -1,43 +1,50 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/forest_discovery.dart';
 import '../services/ambient_soundscape.dart';
 import '../theme/forest_theme.dart';
-import '../widgets/forest_video_overlay.dart';
+import '../widgets/firefly_field.dart';
+import '../widgets/glass_panel.dart';
 import '../widgets/looping_forest_video.dart';
+import '../widgets/motion.dart';
 
 /// Screen Three — Discover a Living Tree.
 ///
-/// A cinematic close-up of the tree plays while its story slides gently into
-/// view. The video autoplays muted; ambient sound follows the scene (water
-/// for the stream, birdsong elsewhere).
+/// A cinematic close-up fills the top of the screen and drifts with parallax
+/// as the story sheet is scrolled over it. Ambient sound follows the scene
+/// (water for the stream, birdsong elsewhere).
 class TreeDetailScreen extends StatefulWidget {
   const TreeDetailScreen({super.key, required this.discovery});
 
   final ForestDiscovery discovery;
 
-  /// Fades the tree video in as the information moves into view.
+  /// The film rises into view as the previous scene dissolves.
   static Future<void> push(BuildContext context, ForestDiscovery discovery) {
     return Navigator.of(context).push<void>(
       PageRouteBuilder<void>(
         pageBuilder: (_, _, _) => TreeDetailScreen(discovery: discovery),
-        transitionDuration: const Duration(milliseconds: 750),
-        reverseTransitionDuration: const Duration(milliseconds: 550),
+        transitionDuration: const Duration(milliseconds: 800),
+        reverseTransitionDuration: const Duration(milliseconds: 500),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final fade = CurvedAnimation(
+          final curved = CurvedAnimation(
             parent: animation,
-            curve: const Interval(0, 0.65, curve: Curves.easeOut),
+            curve: ForestTheme.emphasized,
           );
-          final slide = Tween<Offset>(
-            begin: const Offset(0, 0.06),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(
-            parent: animation,
-            curve: const Interval(0.2, 1, curve: Curves.easeOutCubic),
-          ));
           return FadeTransition(
-            opacity: fade,
-            child: SlideTransition(position: slide, child: child),
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: const Interval(0, 0.6, curve: Curves.easeOut),
+            ),
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.08),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
           );
         },
       ),
@@ -49,20 +56,19 @@ class TreeDetailScreen extends StatefulWidget {
 }
 
 class _TreeDetailScreenState extends State<TreeDetailScreen>
-    with TickerProviderStateMixin {
-  late final AnimationController _intro = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  )..forward();
+    with SingleTickerProviderStateMixin {
+  static const _ms = Duration(milliseconds: 1);
 
-  late final AnimationController _heart = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 450),
-  );
+  final ScrollController _scroll = ScrollController();
+  late final AnimationController _burst;
 
   @override
   void initState() {
     super.initState();
+    _burst = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
     // The stream detail swaps the ambience to running water.
     final track = widget.discovery.id == 'hidden_stream'
         ? AmbientSoundscape.streamAsset
@@ -72,261 +78,383 @@ class _TreeDetailScreenState extends State<TreeDetailScreen>
 
   @override
   void dispose() {
-    _intro.dispose();
-    _heart.dispose();
+    _scroll.dispose();
+    _burst.dispose();
     super.dispose();
   }
 
   void _toggleSave(ForestDiscovery discovery) {
     final nowSaved = SavedForestStore.instance.toggle(discovery);
     if (nowSaved) {
-      _heart.forward(from: 0);
+      HapticFeedback.heavyImpact();
+      _burst.forward(from: 0);
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
         ..showSnackBar(
           SnackBar(
-            content: Text('${discovery.title} saved to My Forest'),
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.favorite_rounded,
+                  color: ForestTheme.morningGold,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text('${discovery.title} saved to My Forest')),
+              ],
+            ),
             duration: const Duration(seconds: 2),
           ),
         );
     } else {
-      _heart.reverse(from: 1);
+      HapticFeedback.selectionClick();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final discovery = widget.discovery;
+    final size = MediaQuery.sizeOf(context);
+    final heroHeight = (size.height * 0.56).clamp(300.0, 560.0);
 
     return Scaffold(
-      backgroundColor: ForestTheme.deepForest,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final videoHeight = (constraints.maxHeight * 0.46).clamp(240.0, 460.0);
-          return Column(
-            children: [
-              // -------------------------------------------------- video
-              SizedBox(
-                height: videoHeight,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    FadeTransition(
-                      opacity: CurvedAnimation(
-                        parent: _intro,
-                        curve: const Interval(0, 0.7, curve: Curves.easeOut),
-                      ),
-                      child: LoopingForestVideo(
-                        asset: discovery.videoAsset,
-                        scrim: ForestTheme.softVideoScrim,
-                      ),
-                    ),
-                    ForestVideoOverlay(gradient: ForestTheme.softVideoScrim),
-                    SafeArea(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            IconButton(
-                              onPressed: () => Navigator.of(context).maybePop(),
-                              icon: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.arrow_back_rounded,
-                                    color: ForestTheme.mistIvory,
-                                  ),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'Forest',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: ForestTheme.mistIvory,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            ListenableBuilder(
-                              listenable: SavedForestStore.instance,
-                              builder: (context, _) {
-                                final saved = SavedForestStore.instance
-                                    .isSaved(discovery.id);
-                                return IconButton(
-                                  onPressed: () => _toggleSave(discovery),
-                                  icon: AnimatedSwitcher(
-                                    duration:
-                                        const Duration(milliseconds: 250),
-                                    transitionBuilder: (child, anim) =>
-                                        ScaleTransition(
-                                        scale: anim,
-                                        child: child,
-                                      ),
-                                    child: Icon(
-                                      saved
-                                          ? Icons.favorite_rounded
-                                          : Icons.favorite_border_rounded,
-                                      key: ValueKey(saved),
-                                      color: saved
-                                          ? ForestTheme.morningGold
-                                          : ForestTheme.mistIvory,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+      body: Stack(
+        children: [
+          // --------------------------------------------- parallax film
+          AnimatedBuilder(
+            animation: _scroll,
+            builder: (context, child) {
+              final offset = _scroll.hasClients ? _scroll.offset : 0.0;
+              // Drift up at 40% of scroll speed; stretch on overscroll.
+              final stretch = offset < 0 ? 1 + (-offset / heroHeight) : 1.0;
+              return Positioned(
+                top: offset > 0 ? -offset * 0.4 : 0,
+                left: 0,
+                right: 0,
+                height: heroHeight,
+                child: Transform.scale(
+                  scale: stretch,
+                  alignment: Alignment.topCenter,
+                  child: child,
                 ),
-              ),
+              );
+            },
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                LoopingForestVideo(
+                  asset: discovery.videoAsset,
+                  scrim: ForestTheme.softVideoScrim,
+                  kenBurns: true,
+                  focusPull: true,
+                ),
+                const FireflyField(count: 16),
+              ],
+            ),
+          ),
 
-              // ------------------------------------------------ content
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 26, 24, 28),
-                  child: _staggered(
-                    from: 0.35,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          discovery.kicker,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 2.4,
-                            color: ForestTheme.morningGold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          discovery.title,
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.6,
-                            color: ForestTheme.mistIvory,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          discovery.description,
-                          style: TextStyle(
-                            fontSize: 15.5,
-                            height: 1.55,
-                            color: ForestTheme.mistIvory.withValues(alpha: 0.82),
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: ForestTheme.deepForest,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: ForestTheme.mossGreen.withValues(alpha: 0.6),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: _InfoColumn(
-                                  label: 'SPECIES',
-                                  value: discovery.species,
-                                ),
-                              ),
-                              Container(
-                                width: 1,
-                                height: 40,
-                                color: ForestTheme.mossGreen
-                                    .withValues(alpha: 0.6),
-                              ),
-                              Expanded(
-                                child: _InfoColumn(
-                                  label: 'STATUS',
-                                  value: discovery.status,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1D3A2D)
-                                .withValues(alpha: 0.75),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: ForestTheme.fern.withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'DID YOU KNOW?',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 2,
-                                  color: ForestTheme.morningGold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                discovery.didYouKnow,
-                                style: TextStyle(
-                                  fontSize: 14.5,
-                                  height: 1.5,
-                                  color: ForestTheme.mistIvory
-                                      .withValues(alpha: 0.88),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        _SaveButton(
-                          discovery: discovery,
-                          heart: _heart,
-                          onPressed: () => _toggleSave(discovery),
-                        ),
-                      ],
-                    ),
-                  ),
+          // ------------------------------------------------ story sheet
+          CustomScrollView(
+            controller: _scroll,
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            slivers: [
+              SliverToBoxAdapter(child: SizedBox(height: heroHeight - 36)),
+              SliverToBoxAdapter(
+                child: _StorySheet(
+                  discovery: discovery,
+                  burst: _burst,
+                  onSave: () => _toggleSave(discovery),
                 ),
               ),
             ],
-          );
-        },
+          ),
+
+          // ------------------------------------------------ top controls
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  GlassIconButton(
+                    tooltip: 'Back to the forest',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Icons.arrow_back_rounded),
+                  ),
+                  const Spacer(),
+                  ListenableBuilder(
+                    listenable: SavedForestStore.instance,
+                    builder: (context, _) {
+                      final saved = SavedForestStore.instance.isSaved(
+                        discovery.id,
+                      );
+                      return GlassIconButton(
+                        tooltip: saved ? 'Remove from My Forest' : 'Save',
+                        onPressed: () => _toggleSave(discovery),
+                        icon: AnimatedSwitcher(
+                          duration: ForestTheme.quick,
+                          transitionBuilder: (child, anim) =>
+                              ScaleTransition(scale: anim, child: child),
+                          child: Icon(
+                            saved
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            key: ValueKey(saved),
+                            color: saved
+                                ? ForestTheme.morningGold
+                                : ForestTheme.mistIvory,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StorySheet extends StatelessWidget {
+  const _StorySheet({
+    required this.discovery,
+    required this.burst,
+    required this.onSave,
+  });
+
+  final ForestDiscovery discovery;
+  final Animation<double> burst;
+  final VoidCallback onSave;
+
+  static const _ms = _TreeDetailScreenState._ms;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            ForestTheme.canopy.withValues(alpha: 0.92),
+            ForestTheme.deepForest,
+          ],
+          stops: const [0, 0.35],
+        ),
+        border: Border(
+          top: BorderSide(color: ForestTheme.mistIvory.withValues(alpha: 0.14)),
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(24, 14, 24, 28 + bottomInset),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Grabber
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: ForestTheme.mistIvory.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 22),
+            Reveal(
+              delay: _ms * 300,
+              child: Row(
+                children: [
+                  Text(discovery.emoji, style: const TextStyle(fontSize: 16)),
+                  const SizedBox(width: 8),
+                  Text(discovery.kicker, style: ForestTheme.label(size: 12)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            WordReveal(
+              delay: _ms * 400,
+              style: ForestTheme.display(size: 50),
+              accentStyle: ForestTheme.display(size: 50, italic: true),
+              lines: [_titleWords(discovery.title)],
+            ),
+            const SizedBox(height: 14),
+            Reveal(
+              delay: _ms * 650,
+              child: Text(
+                discovery.description,
+                style: ForestTheme.ivory(size: 16, opacity: 0.82, height: 1.6),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Reveal(
+              delay: _ms * 800,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _StatTile(
+                      icon: Icons.spa_rounded,
+                      label: 'SPECIES',
+                      value: discovery.species,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _StatTile(
+                      icon: Icons.favorite_rounded,
+                      label: 'STATUS',
+                      value: discovery.status,
+                      live: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Reveal(
+              delay: _ms * 950,
+              child: _DidYouKnow(text: discovery.didYouKnow),
+            ),
+            const SizedBox(height: 26),
+            Reveal(
+              delay: _ms * 1100,
+              child: _SaveButton(
+                discovery: discovery,
+                burst: burst,
+                onPressed: onSave,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _staggered({required double from, required Widget child}) {
-    return FadeTransition(
-      opacity: CurvedAnimation(
-        parent: _intro,
-        curve: Interval(from, 1, curve: Curves.easeOutCubic),
+  /// Gild the last word of the title ("The Ancient *Oak*").
+  static List<HeadlineWord> _titleWords(String title) {
+    final words = title.split(' ');
+    return [
+      for (var i = 0; i < words.length; i++)
+        (text: words[i], accent: i == words.length - 1),
+    ];
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  const _StatTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.live = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool live;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        color: ForestTheme.mistIvory.withValues(alpha: 0.05),
+        border: Border.all(color: ForestTheme.mistIvory.withValues(alpha: 0.1)),
       ),
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 0.12),
-          end: Offset.zero,
-        ).animate(CurvedAnimation(
-          parent: _intro,
-          curve: Interval(from, 1, curve: Curves.easeOutCubic),
-        )),
-        child: child,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: ForestTheme.fern.withValues(alpha: 0.16),
+                ),
+                child: Icon(icon, size: 16, color: ForestTheme.fern),
+              ),
+              const Spacer(),
+              if (live) const LiveDot(),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            label,
+            style: ForestTheme.label(size: 10, color: ForestTheme.fern),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: ForestTheme.ivory(size: 18, weight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DidYouKnow extends StatelessWidget {
+  const _DidYouKnow({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    // Gradient hairline border: gold fading into moss.
+    return Container(
+      padding: const EdgeInsets.all(1.2),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            ForestTheme.morningGold.withValues(alpha: 0.8),
+            ForestTheme.mossGreen.withValues(alpha: 0.2),
+          ],
+        ),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(23),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF233A27), ForestTheme.canopy],
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                ShaderMask(
+                  blendMode: BlendMode.srcIn,
+                  shaderCallback: ForestTheme.goldGradient.createShader,
+                  child: const Icon(Icons.auto_awesome_rounded, size: 18),
+                ),
+                const SizedBox(width: 8),
+                Text('DID YOU KNOW?', style: ForestTheme.label(size: 11)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(text, style: ForestTheme.display(size: 22, height: 1.3)),
+          ],
+        ),
       ),
     );
   }
@@ -335,12 +463,12 @@ class _TreeDetailScreenState extends State<TreeDetailScreen>
 class _SaveButton extends StatelessWidget {
   const _SaveButton({
     required this.discovery,
-    required this.heart,
+    required this.burst,
     required this.onPressed,
   });
 
   final ForestDiscovery discovery;
-  final Animation<double> heart;
+  final Animation<double> burst;
   final VoidCallback onPressed;
 
   @override
@@ -349,63 +477,83 @@ class _SaveButton extends StatelessWidget {
       listenable: SavedForestStore.instance,
       builder: (context, _) {
         final saved = SavedForestStore.instance.isSaved(discovery.id);
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 350),
-          height: 56,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            gradient: saved
-                ? null
-                : const LinearGradient(
-                    colors: [ForestTheme.fern, Color(0xFF7C9462)],
+        final label = saved ? 'Saved to My Forest' : 'Save Discovery';
+        return Semantics(
+          button: true,
+          toggled: saved,
+          label: label,
+          excludeSemantics: true,
+          child: PressableScale(
+            haptic: false,
+            onTap: onPressed,
+            child: AnimatedContainer(
+              duration: ForestTheme.medium,
+              curve: Curves.easeOutCubic,
+              height: 62,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                gradient: saved ? null : ForestTheme.ctaGradient,
+                color: saved ? ForestTheme.canopy : null,
+                border: Border.all(
+                  color: ForestTheme.morningGold.withValues(
+                    alpha: saved ? 0.9 : 0,
                   ),
-            color: saved ? ForestTheme.deepForest : null,
-            border: Border.all(
-              color: saved
-                  ? ForestTheme.morningGold
-                  : ForestTheme.morningGold.withValues(alpha: 0),
-              width: 1.4,
-            ),
-            boxShadow: saved
-                ? null
-                : [
-                    BoxShadow(
-                      color: ForestTheme.fern.withValues(alpha: 0.4),
-                      blurRadius: 22,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(999),
-              onTap: onPressed,
+                  width: 1.4,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: (saved ? ForestTheme.morningGold : ForestTheme.fern)
+                        .withValues(alpha: 0.35),
+                    blurRadius: 26,
+                    spreadRadius: -4,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  ScaleTransition(
-                    scale: Tween<double>(begin: 1, end: 1.35).animate(
-                      CurvedAnimation(parent: heart, curve: Curves.easeOutBack),
-                    ),
-                    child: Icon(
-                      saved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      color: saved
-                          ? ForestTheme.morningGold
-                          : ForestTheme.deepForest,
-                      size: 22,
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CustomPaint(
+                      painter: _BurstPainter(burst),
+                      child: AnimatedBuilder(
+                        animation: burst,
+                        builder: (context, child) {
+                          // Thump: overshoot, then settle.
+                          final t = burst.value;
+                          final scale = t == 0
+                              ? 1.0
+                              : 1 + 0.45 * math.sin(math.pi * t) * (1 - t);
+                          return Transform.scale(scale: scale, child: child);
+                        },
+                        child: Icon(
+                          saved
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          color: saved
+                              ? ForestTheme.morningGold
+                              : ForestTheme.deepForest,
+                          size: 22,
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    saved ? 'Saved to My Forest' : 'Save Discovery',
-                    style: TextStyle(
-                      fontSize: 16.5,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
-                      color: saved
-                          ? ForestTheme.mistIvory
-                          : ForestTheme.deepForest,
+                  const SizedBox(width: 8),
+                  AnimatedSwitcher(
+                    duration: ForestTheme.quick,
+                    child: Text(
+                      label,
+                      key: ValueKey(saved),
+                      style: TextStyle(
+                        fontFamily: ForestTheme.textFamily,
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w800,
+                        color: saved
+                            ? ForestTheme.mistIvory
+                            : ForestTheme.deepForest,
+                      ),
                     ),
                   ),
                 ],
@@ -418,36 +566,39 @@ class _SaveButton extends StatelessWidget {
   }
 }
 
-class _InfoColumn extends StatelessWidget {
-  const _InfoColumn({required this.label, required this.value});
+/// Golden sparks and a ring that burst outward from the heart on save.
+class _BurstPainter extends CustomPainter {
+  _BurstPainter(this.t) : super(repaint: t);
 
-  final String label;
-  final String value;
+  final Animation<double> t;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.8,
-            color: ForestTheme.fern.withValues(alpha: 0.85),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            color: ForestTheme.mistIvory,
-          ),
-        ),
-      ],
-    );
+  void paint(Canvas canvas, Size size) {
+    final v = t.value;
+    if (v == 0 || v == 1) return;
+    final center = size.center(Offset.zero);
+    final ease = Curves.easeOutCubic.transform(v);
+    final fade = (1 - v).clamp(0.0, 1.0);
+
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2 * fade
+      ..color = ForestTheme.morningGold.withValues(alpha: fade * 0.8);
+    canvas.drawCircle(center, 10 + 26 * ease, ring);
+
+    final spark = Paint();
+    const count = 10;
+    for (var i = 0; i < count; i++) {
+      final angle = i / count * 2 * math.pi + 0.3;
+      final distance = 14 + 30 * ease;
+      final pos = center + Offset(math.cos(angle), math.sin(angle)) * distance;
+      spark.color =
+          (i.isEven ? ForestTheme.morningGold : ForestTheme.springGlow)
+              .withValues(alpha: fade);
+      canvas.drawCircle(pos, 2.6 * fade + 0.4, spark);
+    }
   }
+
+  @override
+  bool shouldRepaint(_BurstPainter old) => false;
 }

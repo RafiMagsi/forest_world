@@ -37,6 +37,12 @@ dependencies:
   video_player: ^2.11.1
   audioplayers: ^6.7.1
 
+  # Transitive (audioplayers -> path_provider). 2.6.0 depends on objective_c,
+  # whose native-assets hook trips a Flutter 3.41 hot-reload bug on iOS:
+  # "Target native_assets required define SdkRoot but it was not provided".
+  # 2.5.1 has no hook. Lift this cap once Flutter passes SdkRoot to runHooks().
+  path_provider_foundation: ">=2.5.1 <2.6.0"
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -89,3 +95,23 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+  fonts:
+    # Editorial display serif for headlines (SIL OFL 1.1).
+    - family: InstrumentSerif
+      fonts:
+        - asset: assets/fonts/InstrumentSerif-Regular.ttf
+        - asset: assets/fonts/InstrumentSerif-Italic.ttf
+          style: italic
+    # Interface sans (SIL OFL 1.1).
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope-400.ttf
+          weight: 400
+        - asset: assets/fonts/Manrope-500.ttf
+          weight: 500
+        - asset: assets/fonts/Manrope-600.ttf
+          weight: 600
+        - asset: assets/fonts/Manrope-700.ttf
+          weight: 700
+        - asset: assets/fonts/Manrope-800.ttf
+          weight: 800

@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -22,6 +25,8 @@ class LoopingForestVideo extends StatefulWidget {
     this.fit = BoxFit.cover,
     this.scrim,
     this.fadeIn = true,
+    this.kenBurns = false,
+    this.focusPull = false,
   });
 
   /// Asset path, e.g. `assets/videos/forest_home.mp4`.
@@ -35,13 +40,23 @@ class LoopingForestVideo extends StatefulWidget {
   /// Gently fade the clip in once it is ready.
   final bool fadeIn;
 
+  /// Slow, endless push-in and drift — makes even a static shot feel filmed.
+  final bool kenBurns;
+
+  /// Open on a soft, slightly over-scaled frame that racks into focus, like
+  /// a camera finding its subject.
+  final bool focusPull;
+
   @override
   State<LoopingForestVideo> createState() => _LoopingForestVideoState();
 }
 
 class _LoopingForestVideoState extends State<LoopingForestVideo>
-    with WidgetsBindingObserver, RouteAware {
+    with WidgetsBindingObserver, RouteAware, TickerProviderStateMixin {
   late final VideoPlayerController _controller;
+
+  late final AnimationController _drift;
+  late final AnimationController _focus;
 
   bool _ready = false;
   bool _failed = false;
@@ -53,7 +68,19 @@ class _LoopingForestVideoState extends State<LoopingForestVideo>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _controller = VideoPlayerController.asset(widget.asset);
+    _drift = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 28),
+    );
+    _focus = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    );
+    _controller = VideoPlayerController.asset(
+      widget.asset,
+      // Ambient clip: never steal audio focus from music or the soundscape.
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
     _initialize();
   }
 
@@ -68,6 +95,8 @@ class _LoopingForestVideoState extends State<LoopingForestVideo>
       await _controller.setVolume(0); // muted autoplay, per spec
       if (!mounted) return;
       setState(() => _ready = true);
+      if (widget.kenBurns) _drift.repeat();
+      if (widget.focusPull) _focus.forward();
       _updatePlayback();
     } catch (_) {
       // Missing asset, unsupported codec, blocked platform... show the
@@ -136,6 +165,8 @@ class _LoopingForestVideoState extends State<LoopingForestVideo>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     if (_subscribed) forestRouteObserver.unsubscribe(this);
+    _drift.dispose();
+    _focus.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -149,18 +180,30 @@ class _LoopingForestVideoState extends State<LoopingForestVideo>
       content = const _LoadingShimmer();
     } else {
       final size = _controller.value.size;
-      content = AnimatedOpacity(
-        duration: const Duration(milliseconds: 700),
-        opacity: _ready ? 1 : 0,
-        child: FittedBox(
-          fit: widget.fit,
-          clipBehavior: Clip.hardEdge,
-          child: SizedBox(
-            width: size.width,
-            height: size.height,
-            child: VideoPlayer(_controller),
-          ),
+      content = FittedBox(
+        fit: widget.fit,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: VideoPlayer(_controller),
         ),
+      );
+      if (!MediaQuery.disableAnimationsOf(context) &&
+          (widget.kenBurns || widget.focusPull)) {
+        content = _CameraMove(
+          drift: _drift,
+          focus: widget.focusPull ? _focus : null,
+          child: content,
+        );
+      }
+      content = TweenAnimationBuilder<double>(
+        tween: Tween(begin: widget.fadeIn ? 0 : 1, end: 1),
+        duration: const Duration(milliseconds: 900),
+        curve: Curves.easeOut,
+        child: content,
+        builder: (context, opacity, child) =>
+            Opacity(opacity: opacity, child: child),
       );
     }
 
@@ -171,6 +214,50 @@ class _LoopingForestVideoState extends State<LoopingForestVideo>
         if (widget.scrim != null)
           DecoratedBox(decoration: BoxDecoration(gradient: widget.scrim)),
       ],
+    );
+  }
+}
+
+/// Applies the Ken Burns drift and the opening focus pull to the video.
+class _CameraMove extends StatelessWidget {
+  const _CameraMove({required this.drift, required this.child, this.focus});
+
+  final Animation<double> drift;
+  final Animation<double>? focus;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final focusCurve = focus == null
+        ? null
+        : CurvedAnimation(parent: focus!, curve: Curves.easeOutCubic);
+    return ClipRect(
+      child: AnimatedBuilder(
+        animation: Listenable.merge([drift, ?focusCurve]),
+        child: child,
+        builder: (context, child) {
+          final t = drift.value * 2 * math.pi;
+          final f = focusCurve?.value ?? 1;
+          // Breathe between 1.04x and 1.10x, drifting a few pixels.
+          final scale = 1.07 + 0.03 * math.sin(t) + 0.12 * (1 - f);
+          final dx = 10 * math.cos(t);
+          final dy = 6 * math.sin(t * 2);
+          final sigma = 14 * (1 - f);
+          // Constant tree shape: toggling `enabled` keeps the VideoPlayer
+          // mounted when the focus pull finishes.
+          return ImageFiltered(
+            enabled: sigma > 0.1,
+            imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+            child: Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.identity()
+                ..translateByDouble(dx, dy, 0, 1)
+                ..scaleByDouble(scale, scale, 1, 1),
+              child: child,
+            ),
+          );
+        },
+      ),
     );
   }
 }

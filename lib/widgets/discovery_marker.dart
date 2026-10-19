@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/forest_theme.dart';
 
-/// A restrained glowing pin that floats above the moving aerial video.
+/// A glowing pin that floats above the moving aerial video.
 ///
-/// The marker breathes gently; when selected it brightens to Morning Gold and
-/// its label fades in. Deliberately subtle — exploration, not sci-fi.
+/// Radar ripples spread from it continuously; when selected it turns Morning
+/// Gold, lifts, and its name appears in a glass chip beneath.
 class DiscoveryMarker extends StatefulWidget {
   const DiscoveryMarker({
     super.key,
@@ -14,6 +15,9 @@ class DiscoveryMarker extends StatefulWidget {
     required this.onTap,
     this.icon = Icons.location_on_rounded,
   });
+
+  /// Size of the square pin + ripple area; the pin is centred within it.
+  static const double pinExtent = 76;
 
   final String label;
   final bool selected;
@@ -26,103 +30,135 @@ class DiscoveryMarker extends StatefulWidget {
 
 class _DiscoveryMarkerState extends State<DiscoveryMarker>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
+  late final AnimationController _ripple = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 2600 ~/ 1000),
-  )..repeat(reverse: true);
+    duration: const Duration(milliseconds: 2400),
+  )..repeat();
 
   @override
   void dispose() {
-    _controller.dispose();
+    _ripple.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = widget.selected
-        ? (base: ForestTheme.morningGold, glow: ForestTheme.morningGold)
-        : (base: ForestTheme.mistIvory, glow: ForestTheme.fern);
+    final selected = widget.selected;
+    final accent = selected ? ForestTheme.morningGold : ForestTheme.springGlow;
 
     return Semantics(
       button: true,
+      selected: selected,
       label: 'Discover ${widget.label}',
+      excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          widget.onTap();
+        },
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                final wave = Curves.easeInOut.transform(_controller.value);
-                final pulse = widget.selected ? 1.0 + 0.10 * wave : 1.0;
-                final glow = widget.selected ? 0.55 + 0.35 * wave : 0.30 + 0.18 * wave;
-                return Transform.scale(
-                  scale: pulse,
-                  child: Container(
-                    width: 34,
-                    height: 34,
+            SizedBox(
+              width: DiscoveryMarker.pinExtent,
+              height: DiscoveryMarker.pinExtent,
+              child: AnimatedBuilder(
+                animation: _ripple,
+                builder: (context, child) {
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      for (var i = 0; i < 2; i++)
+                        _ring((_ripple.value + i / 2) % 1, accent),
+                      child!,
+                    ],
+                  );
+                },
+                child: AnimatedScale(
+                  scale: selected ? 1.18 : 1,
+                  duration: ForestTheme.medium,
+                  curve: Curves.easeOutBack,
+                  child: AnimatedContainer(
+                    duration: ForestTheme.medium,
+                    width: 38,
+                    height: 38,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
+                      gradient: selected ? ForestTheme.goldGradient : null,
+                      color: selected
+                          ? null
+                          : ForestTheme.deepForest.withValues(alpha: 0.6),
+                      border: Border.all(
+                        color: accent.withValues(alpha: 0.9),
+                        width: 1.5,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: scheme.glow.withValues(alpha: glow),
-                          blurRadius: widget.selected ? 26 : 18,
-                          spreadRadius: widget.selected ? 5 : 2,
+                          color: accent.withValues(alpha: selected ? 0.7 : 0.4),
+                          blurRadius: selected ? 22 : 14,
                         ),
                       ],
                     ),
-                    child: child,
-                  ),
-                );
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: ForestTheme.deepForest.withValues(alpha: 0.55),
-                  border: Border.all(
-                    color: scheme.base.withValues(
-                      alpha: widget.selected ? 0.95 : 0.65,
+                    child: Icon(
+                      widget.icon,
+                      size: 18,
+                      color: selected ? ForestTheme.deepForest : accent,
                     ),
-                    width: 1.4,
                   ),
                 ),
-                child: Icon(widget.icon, size: 18, color: scheme.base),
               ),
             ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 320),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: widget.selected
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
+            AnimatedSwitcher(
+              duration: ForestTheme.medium,
+              switchInCurve: ForestTheme.emphasized,
+              transitionBuilder: (child, anim) => FadeTransition(
+                opacity: anim,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.8, end: 1).animate(anim),
+                  alignment: Alignment.topCenter,
+                  child: child,
+                ),
+              ),
+              child: selected
+                  ? Container(
+                      key: const ValueKey('label'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: ForestTheme.deepForest.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: ForestTheme.morningGold.withValues(alpha: 0.6),
                         ),
-                        decoration: BoxDecoration(
-                          color: ForestTheme.deepForest.withValues(alpha: 0.78),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: ForestTheme.morningGold.withValues(alpha: 0.5),
-                          ),
-                        ),
-                        child: Text(
-                          widget.label,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: ForestTheme.mistIvory,
-                          ),
+                      ),
+                      child: Text(
+                        widget.label,
+                        style: ForestTheme.ivory(
+                          size: 12,
+                          weight: FontWeight.w700,
                         ),
                       ),
                     )
-                  : const SizedBox(width: 0, height: 0),
+                  : const SizedBox(key: ValueKey('none'), height: 0),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _ring(double t, Color color) {
+    return Container(
+      width: 38 + 38 * t,
+      height: 38 + 38 * t,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: color.withValues(alpha: 0.55 * (1 - t)),
+          width: 1.2,
         ),
       ),
     );

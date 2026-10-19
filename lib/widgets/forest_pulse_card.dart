@@ -2,106 +2,138 @@ import 'package:flutter/material.dart';
 
 import '../models/forest_discovery.dart';
 import '../theme/forest_theme.dart';
+import 'glass_panel.dart';
+import 'motion.dart';
 
-/// "YOUR FOREST AT A GLANCE" — a compact translucent panel over the moving
-/// forest video. Values are sample demonstration data and count gently into
-/// view when the screen opens.
+/// "YOUR FOREST AT A GLANCE" — a compact liquid-glass panel over the moving
+/// forest video. Values are sample demonstration data; they count up and
+/// their progress threads fill with gold when the screen opens.
 class ForestPulseCard extends StatelessWidget {
   const ForestPulseCard({super.key});
 
+  static const _metrics = [
+    (value: ForestPulse.speciesDiscovered, goal: 160, label: 'Species'),
+    (value: ForestPulse.treesExplored, goal: 30, label: 'Trees'),
+    (value: ForestPulse.wildlifeObservations, goal: 24, label: 'Wildlife'),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: ForestTheme.deepForest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: ForestTheme.fern.withValues(alpha: 0.28)),
-      ),
+    return GlassPanel(
+      radius: 28,
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'YOUR FOREST AT A GLANCE',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.6,
-              color: ForestTheme.morningGold,
-            ),
-          ),
-          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
-                child: _PulseMetric(
-                  value: ForestPulse.speciesDiscovered,
-                  label: 'Species discovered',
+                child: Text(
+                  'YOUR FOREST AT A GLANCE',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ForestTheme.label(),
                 ),
               ),
-              _divider(),
-              Expanded(
-                child: _PulseMetric(
-                  value: ForestPulse.treesExplored,
-                  label: 'Trees explored',
+              const SizedBox(width: 8),
+              const LiveDot(),
+              const SizedBox(width: 4),
+              Text(
+                'LIVE',
+                style: ForestTheme.label(
+                  size: 10,
+                  color: ForestTheme.springGlow,
                 ),
               ),
-              _divider(),
-              Expanded(
-                child: _PulseMetric(
-                  value: ForestPulse.wildlifeObservations,
-                  label: 'Wildlife observations',
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              for (var i = 0; i < _metrics.length; i++) ...[
+                if (i > 0) const SizedBox(width: 18),
+                Expanded(
+                  child: _PulseMetric(
+                    value: _metrics[i].value,
+                    goal: _metrics[i].goal,
+                    label: _metrics[i].label,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ],
       ),
     );
   }
-
-  Widget _divider() => Container(
-        width: 1,
-        height: 42,
-        color: ForestTheme.mossGreen.withValues(alpha: 0.5),
-      );
 }
 
 class _PulseMetric extends StatelessWidget {
-  const _PulseMetric({required this.value, required this.label});
+  const _PulseMetric({
+    required this.value,
+    required this.goal,
+    required this.label,
+  });
 
   final int value;
+  final int goal;
   final String label;
 
   @override
   Widget build(BuildContext context) {
-    return TweenAnimationBuilder<int>(
-      tween: IntTween(begin: 0, end: value),
-      duration: const Duration(milliseconds: 1400),
-      curve: Curves.easeOutCubic,
-      builder: (context, animated, _) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$animated',
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                color: ForestTheme.mistIvory,
-                height: 1.1,
+    return Semantics(
+      label: '$value $label',
+      excludeSemantics: true,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 1800),
+        curve: ForestTheme.emphasized,
+        builder: (context, t, _) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${(value * t).round()}',
+                style: ForestTheme.display(size: 34, height: 1),
               ),
-            ),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: ForestTheme.mistIvory.withValues(alpha: 0.7),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: ForestTheme.ivory(
+                  size: 12,
+                  weight: FontWeight.w600,
+                  opacity: 0.7,
+                ),
               ),
-            ),
-          ],
-        );
-      },
+              const SizedBox(height: 8),
+              // Progress thread toward the season's goal.
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: SizedBox(
+                  height: 3,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ColoredBox(
+                        color: ForestTheme.mistIvory.withValues(alpha: 0.12),
+                      ),
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: (value / goal * t).clamp(0.0, 1.0),
+                        child: const DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: ForestTheme.goldGradient,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
