@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/forest_discovery.dart';
 import '../services/ambient_soundscape.dart';
 import '../theme/forest_theme.dart';
 import '../widgets/firefly_field.dart';
@@ -18,8 +19,8 @@ const _heroVideo = 'assets/videos/483301.mp4';
 
 /// Screen One — The Living Forest Home.
 ///
-/// The film opens slightly soft and racks into focus while drifting motes of
-/// light rise through the frame; the title then rises word by word and the
+/// The film plays exactly as shot, opening slightly soft and racking into
+/// focus while drifting motes of light rise through the frame; the title then rises word by word and the
 /// interface settles in beneath it like mist.
 class ForestHomeScreen extends StatefulWidget {
   const ForestHomeScreen({super.key});
@@ -34,6 +35,17 @@ class _ForestHomeScreenState extends State<ForestHomeScreen> {
     super.initState();
     // Greet the visitor with birdsong.
     AmbientSoundscape.instance.playTrack(AmbientSoundscape.birdsAsset);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Warm the next scenes so every transition lands on a real frame.
+    LoopingForestVideo.precachePosters(context, [
+      _heroVideo,
+      'assets/videos/forest_aerial.mp4',
+      for (final d in ForestDiscovery.all) d.videoAsset,
+    ]);
   }
 
   String get _greeting {
@@ -53,10 +65,10 @@ class _ForestHomeScreenState extends State<ForestHomeScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Shown exactly as filmed: real-time speed, no camera drift.
           const LoopingForestVideo(
             asset: _heroVideo,
             scrim: ForestTheme.videoScrim,
-            kenBurns: true,
             focusPull: true,
           ),
           const _SunGlow(),

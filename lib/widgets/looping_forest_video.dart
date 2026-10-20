@@ -14,7 +14,8 @@ final RouteObserver<ModalRoute<void>> forestRouteObserver =
 /// Plays a bundled, portrait forest clip with muted autoplay and a seamless
 /// loop, while handling everything a preview needs to stay robust:
 ///
-/// * initialization with a soft loading shimmer,
+/// * an instant poster frame (`assets/posters/<clip>.jpg`) while the player
+///   initializes, cross-faded into the live video,
 /// * a gradient error fallback when a clip cannot be decoded,
 /// * pausing when the app is backgrounded or another route covers this one,
 /// * full disposal when the screen is removed.
@@ -41,11 +42,23 @@ class LoopingForestVideo extends StatefulWidget {
   final bool fadeIn;
 
   /// Slow, endless push-in and drift — makes even a static shot feel filmed.
+  /// Leave off for footage that should be shown exactly as it was shot.
   final bool kenBurns;
 
-  /// Open on a soft, slightly over-scaled frame that racks into focus, like
-  /// a camera finding its subject.
+  /// Open on a soft frame that racks into focus, like a camera finding its
+  /// subject. Blur only — the frame is never scaled or moved.
   final bool focusPull;
+
+  /// The first-frame poster shipped for [asset].
+  static String posterFor(String asset) =>
+      'assets/posters/${asset.split('/').last.replaceFirst('.mp4', '.jpg')}';
+
+  /// Decode posters ahead of time so the next scene opens on a real image.
+  static void precachePosters(BuildContext context, Iterable<String> assets) {
+    for (final asset in assets) {
+      precacheImage(AssetImage(posterFor(asset)), context, onError: (_, _) {});
+    }
+  }
 
   @override
   State<LoopingForestVideo> createState() => _LoopingForestVideoState();
@@ -93,6 +106,8 @@ class _LoopingForestVideoState extends State<LoopingForestVideo>
       }
       await _controller.setLooping(true);
       await _controller.setVolume(0); // muted autoplay, per spec
+      // Always real time: footage plays at exactly the speed it was shot.
+      await _controller.setPlaybackSpeed(1);
       if (!mounted) return;
       setState(() => _ready = true);
       if (widget.kenBurns) _drift.repeat();
@@ -173,38 +188,55 @@ class _LoopingForestVideoState extends State<LoopingForestVideo>
 
   @override
   Widget build(BuildContext context) {
+    final poster = Image.asset(
+      LoopingForestVideo.posterFor(widget.asset),
+      fit: widget.fit,
+      width: double.infinity,
+      height: double.infinity,
+      gaplessPlayback: true,
+      errorBuilder: (_, _, _) =>
+          _failed ? const _VideoFallback() : const _LoadingShimmer(),
+    );
+
     Widget content;
     if (_failed) {
-      content = const _VideoFallback();
-    } else if (!_ready) {
-      content = const _LoadingShimmer();
+      // A still of the scene is calmer than an error.
+      content = poster;
     } else {
       final size = _controller.value.size;
-      content = FittedBox(
-        fit: widget.fit,
-        clipBehavior: Clip.hardEdge,
-        child: SizedBox(
-          width: size.width,
-          height: size.height,
-          child: VideoPlayer(_controller),
-        ),
+      content = Stack(
+        fit: StackFit.expand,
+        children: [
+          poster,
+          if (_ready)
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: widget.fadeIn ? 0 : 1, end: 1),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOut,
+              builder: (context, opacity, child) =>
+                  Opacity(opacity: opacity, child: child),
+              child: FittedBox(
+                fit: widget.fit,
+                clipBehavior: Clip.hardEdge,
+                child: SizedBox(
+                  width: size.width,
+                  height: size.height,
+                  child: VideoPlayer(_controller),
+                ),
+              ),
+            ),
+        ],
       );
+      // The poster shares the camera move, so it starts with the same blur
+      // and framing the video will have — no pop when the video takes over.
       if (!MediaQuery.disableAnimationsOf(context) &&
           (widget.kenBurns || widget.focusPull)) {
         content = _CameraMove(
-          drift: _drift,
+          drift: widget.kenBurns ? _drift : null,
           focus: widget.focusPull ? _focus : null,
           child: content,
         );
       }
-      content = TweenAnimationBuilder<double>(
-        tween: Tween(begin: widget.fadeIn ? 0 : 1, end: 1),
-        duration: const Duration(milliseconds: 900),
-        curve: Curves.easeOut,
-        child: content,
-        builder: (context, opacity, child) =>
-            Opacity(opacity: opacity, child: child),
-      );
     }
 
     return Stack(
@@ -218,31 +250,34 @@ class _LoopingForestVideoState extends State<LoopingForestVideo>
   }
 }
 
-/// Applies the Ken Burns drift and the opening focus pull to the video.
+/// Applies the Ken Burns drift and/or the opening focus pull to the video.
 class _CameraMove extends StatelessWidget {
-  const _CameraMove({required this.drift, required this.child, this.focus});
+  const _CameraMove({required this.child, this.drift, this.focus});
 
-  final Animation<double> drift;
+  final Animation<double>? drift;
   final Animation<double>? focus;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final focusCurve = focus == null
-        ? null
-        : CurvedAnimation(parent: focus!, curve: Curves.easeOutCubic);
     return ClipRect(
       child: AnimatedBuilder(
-        animation: Listenable.merge([drift, ?focusCurve]),
+        animation: Listenable.merge([?drift, ?focus]),
         child: child,
         builder: (context, child) {
-          final t = drift.value * 2 * math.pi;
-          final f = focusCurve?.value ?? 1;
-          // Breathe between 1.04x and 1.10x, drifting a few pixels.
-          final scale = 1.07 + 0.03 * math.sin(t) + 0.12 * (1 - f);
-          final dx = 10 * math.cos(t);
-          final dy = 6 * math.sin(t * 2);
+          final f = Curves.easeOutCubic.transform(focus?.value ?? 1);
           final sigma = 14 * (1 - f);
+
+          var transform = Matrix4.identity();
+          if (drift case final drift?) {
+            // Breathe between 1.04x and 1.10x, drifting a few pixels.
+            final t = drift.value * 2 * math.pi;
+            final scale = 1.07 + 0.03 * math.sin(t);
+            transform = transform
+              ..translateByDouble(10 * math.cos(t), 6 * math.sin(t * 2), 0, 1)
+              ..scaleByDouble(scale, scale, 1, 1);
+          }
+
           // Constant tree shape: toggling `enabled` keeps the VideoPlayer
           // mounted when the focus pull finishes.
           return ImageFiltered(
@@ -250,9 +285,7 @@ class _CameraMove extends StatelessWidget {
             imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
             child: Transform(
               alignment: Alignment.center,
-              transform: Matrix4.identity()
-                ..translateByDouble(dx, dy, 0, 1)
-                ..scaleByDouble(scale, scale, 1, 1),
+              transform: transform,
               child: child,
             ),
           );
@@ -262,7 +295,7 @@ class _CameraMove extends StatelessWidget {
   }
 }
 
-/// Soft animated gradient shown while the controller initializes.
+/// Soft animated gradient shown if a clip has no poster yet.
 class _LoadingShimmer extends StatefulWidget {
   const _LoadingShimmer();
 

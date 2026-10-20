@@ -82,6 +82,40 @@ void main() {
     );
   });
 
+  testWidgets('left alone, Explore tours the discoveries', (tester) async {
+    usePhoneViewport(tester);
+    await enterForest(tester);
+
+    bool selected(String title) => tester
+        .widget<DiscoveryMarker>(
+          find.byWidgetPredicate(
+            (w) => w is DiscoveryMarker && w.label == title,
+          ),
+        )
+        .selected;
+
+    expect(selected('The Ancient Oak'), isFalse);
+    await pumpFrames(tester, 1500); // ~3.5s after opening
+    expect(selected('The Ancient Oak'), isTrue);
+    await pumpFrames(tester, 4000);
+    expect(selected('The Hidden Stream'), isTrue);
+  });
+
+  testWidgets('the first touch ends the tour', (tester) async {
+    usePhoneViewport(tester);
+    await enterForest(tester);
+
+    await tester.tap(find.bySemanticsLabel('Discover Woodland Wildlife'));
+    await pumpFrames(tester, 9000); // well past several tour steps
+
+    final wildlife = tester.widget<DiscoveryMarker>(
+      find.byWidgetPredicate(
+        (w) => w is DiscoveryMarker && w.label == 'Woodland Wildlife',
+      ),
+    );
+    expect(wildlife.selected, isTrue);
+  });
+
   testWidgets('a discovery opens its detail and can be saved', (tester) async {
     usePhoneViewport(tester);
     await enterForest(tester);

@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:ui' show PathMetric;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/forest_discovery.dart';
 import '../services/ambient_soundscape.dart';
@@ -19,7 +21,8 @@ import 'tree_detail_screen.dart';
 /// The aerial film fills the screen; glowing discovery pins float over it,
 /// joined by a softly flowing trail. A glass carousel below is kept in sync
 /// with the pins: tap a pin to bring its story forward, or swipe the stories
-/// to fly between pins.
+/// to fly between pins. Left untouched, the screen gives itself a slow
+/// guided tour of the pins until the first touch.
 class ForestExploreScreen extends StatefulWidget {
   const ForestExploreScreen({super.key});
 
@@ -56,19 +59,49 @@ class _ForestExploreScreenState extends State<ForestExploreScreen> {
   static const _discoveries = ForestDiscovery.all;
   static const _ms = Duration(milliseconds: 1);
 
+  static const _tourDelay = Duration(seconds: 3);
+  static const _tourStep = Duration(seconds: 4);
+
   final PageController _pages = PageController(viewportFraction: 0.84);
   int? _selected;
+  Timer? _tour;
 
   @override
   void initState() {
     super.initState();
     AmbientSoundscape.instance.playTrack(AmbientSoundscape.birdsAsset);
+    _tour = Timer(_tourDelay, () {
+      _advanceTour();
+      _tour = Timer.periodic(_tourStep, (_) => _advanceTour());
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Auto-moving content is motion too: honour "reduce motion".
+    if (MediaQuery.disableAnimationsOf(context)) _stopTour();
   }
 
   @override
   void dispose() {
+    _stopTour();
     _pages.dispose();
     super.dispose();
+  }
+
+  bool get _touring => _tour != null;
+
+  void _advanceTour() {
+    if (!mounted) return;
+    final next = ((_selected ?? -1) + 1) % _discoveries.length;
+    _selectMarker(next);
+  }
+
+  /// Any touch hands control to the viewer for good.
+  void _stopTour() {
+    _tour?.cancel();
+    _tour = null;
   }
 
   void _selectMarker(int index) {
@@ -91,208 +124,219 @@ class _ForestExploreScreenState extends State<ForestExploreScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          const LoopingForestVideo(
-            asset: 'assets/videos/forest_aerial.mp4',
-            scrim: ForestTheme.videoScrim,
-            kenBurns: true,
-          ),
-          const FireflyField(count: 18, color: ForestTheme.springGlow),
-          SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ------------------------------------------------- header
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Row(
-                    children: [
-                      GlassIconButton(
-                        tooltip: 'Back',
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        icon: const Icon(Icons.arrow_back_rounded),
-                      ),
-                      const Spacer(),
-                      Reveal(
-                        delay: _ms * 300,
-                        offset: -10,
-                        child: GlassPanel(
-                          radius: 999,
-                          tint: 0.2,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 9,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const LiveDot(),
-                              const SizedBox(width: 6),
-                              Text(
-                                '${_discoveries.length} DISCOVERIES NEARBY',
-                                style: ForestTheme.label(
-                                  size: 10.5,
-                                  color: ForestTheme.mistIvory,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Reveal(
-                        delay: _ms * 250,
-                        child: Text(
-                          'EXPLORE',
-                          style: ForestTheme.label(size: 12),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      WordReveal(
-                        delay: _ms * 350,
-                        style: ForestTheme.display(size: 46),
-                        accentStyle: ForestTheme.display(
-                          size: 46,
-                          italic: true,
-                        ),
-                        lines: const [
-                          [
-                            (text: 'Whispering', accent: false),
-                            (text: 'Woods', accent: true),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Reveal(
-                        delay: _ms * 650,
-                        child: Text(
-                          'A forest full of stories.',
-                          style: ForestTheme.ivory(size: 15, opacity: 0.8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // -------------------------------------------- marker field
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, box) => Stack(
-                      clipBehavior: Clip.none,
+      body: Listener(
+        onPointerDown: (_) => _stopTour(),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const LoopingForestVideo(
+              asset: 'assets/videos/forest_aerial.mp4',
+              scrim: ForestTheme.videoScrim,
+              kenBurns: true,
+            ),
+            const FireflyField(count: 18, color: ForestTheme.springGlow),
+            SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ------------------------------------------------- header
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Row(
                       children: [
-                        Positioned.fill(
-                          child: Reveal(
-                            delay: _ms * 700,
-                            blur: 0,
-                            offset: 0,
-                            duration: const Duration(milliseconds: 1600),
-                            child: _Trail(
-                              points: [
-                                for (final d in _discoveries) d.markerPosition,
+                        GlassIconButton(
+                          tooltip: 'Back',
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          icon: const Icon(Icons.arrow_back_rounded),
+                        ),
+                        const Spacer(),
+                        Reveal(
+                          delay: _ms * 300,
+                          offset: -10,
+                          child: GlassPanel(
+                            radius: 999,
+                            tint: 0.2,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 9,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const LiveDot(),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${_discoveries.length} DISCOVERIES NEARBY',
+                                  style: ForestTheme.label(
+                                    size: 10.5,
+                                    color: ForestTheme.mistIvory,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
                         ),
-                        for (var i = 0; i < _discoveries.length; i++)
-                          Positioned(
-                            // Centre the pin's 76px ripple box on the point.
-                            left:
-                                _discoveries[i].markerPosition.dx *
-                                    box.maxWidth -
-                                DiscoveryMarker.pinExtent / 2,
-                            top:
-                                _discoveries[i].markerPosition.dy *
-                                    box.maxHeight -
-                                DiscoveryMarker.pinExtent / 2,
-                            width: DiscoveryMarker.pinExtent,
-                            height: DiscoveryMarker.pinExtent,
-                            // The name chip hangs below the pin.
-                            child: OverflowBox(
-                              maxWidth: 220,
-                              maxHeight: 160,
-                              alignment: Alignment.topCenter,
-                              child: Reveal(
-                                delay: _ms * (800 + 160 * i),
-                                child: DiscoveryMarker(
-                                  label: _discoveries[i].title,
-                                  selected: _selected == i,
-                                  icon: _iconFor(_discoveries[i]),
-                                  onTap: () => _selectMarker(i),
-                                ),
-                              ),
-                            ),
-                          ),
                       ],
                     ),
                   ),
-                ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Reveal(
+                          delay: _ms * 250,
+                          child: Text(
+                            'EXPLORE',
+                            style: ForestTheme.label(size: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        WordReveal(
+                          delay: _ms * 350,
+                          style: ForestTheme.display(size: 46),
+                          accentStyle: ForestTheme.display(
+                            size: 46,
+                            italic: true,
+                          ),
+                          lines: const [
+                            [
+                              (text: 'Whispering', accent: false),
+                              (text: 'Woods', accent: true),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Reveal(
+                          delay: _ms * 650,
+                          child: Text(
+                            'A forest full of stories.',
+                            style: ForestTheme.ivory(size: 15, opacity: 0.8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
-                // ----------------------------------------------- carousel
-                Reveal(
-                  delay: _ms * 1000,
-                  child: SizedBox(
-                    height: 152,
-                    child: PageView.builder(
-                      controller: _pages,
-                      itemCount: _discoveries.length,
-                      onPageChanged: (i) => setState(() => _selected = i),
-                      itemBuilder: (context, i) => AnimatedBuilder(
-                        animation: _pages,
-                        builder: (context, child) {
-                          final page =
-                              _pages.positions.length == 1 &&
-                                  _pages.position.haveDimensions
-                              ? _pages.page!
-                              : (_selected ?? 0).toDouble();
-                          final distance = (page - i).abs().clamp(0.0, 1.0);
-                          return Transform.scale(
-                            scale: 1 - 0.07 * distance,
-                            child: Opacity(
-                              opacity: 1 - 0.35 * distance,
-                              child: child,
+                  // -------------------------------------------- marker field
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, box) => Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned.fill(
+                            child: Reveal(
+                              delay: _ms * 700,
+                              blur: 0,
+                              offset: 0,
+                              duration: const Duration(milliseconds: 1600),
+                              child: _Trail(
+                                points: [
+                                  for (final d in _discoveries)
+                                    d.markerPosition,
+                                ],
+                              ),
                             ),
-                          );
+                          ),
+                          for (var i = 0; i < _discoveries.length; i++)
+                            Positioned(
+                              // Centre the pin's 76px ripple box on the point.
+                              left:
+                                  _discoveries[i].markerPosition.dx *
+                                      box.maxWidth -
+                                  DiscoveryMarker.pinExtent / 2,
+                              top:
+                                  _discoveries[i].markerPosition.dy *
+                                      box.maxHeight -
+                                  DiscoveryMarker.pinExtent / 2,
+                              width: DiscoveryMarker.pinExtent,
+                              height: DiscoveryMarker.pinExtent,
+                              // The name chip hangs below the pin.
+                              child: OverflowBox(
+                                maxWidth: 220,
+                                maxHeight: 160,
+                                alignment: Alignment.topCenter,
+                                child: Reveal(
+                                  delay: _ms * (800 + 160 * i),
+                                  child: DiscoveryMarker(
+                                    label: _discoveries[i].title,
+                                    selected: _selected == i,
+                                    icon: _iconFor(_discoveries[i]),
+                                    onTap: () => _selectMarker(i),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // ----------------------------------------------- carousel
+                  Reveal(
+                    delay: _ms * 1000,
+                    child: SizedBox(
+                      height: 152,
+                      child: PageView.builder(
+                        controller: _pages,
+                        itemCount: _discoveries.length,
+                        onPageChanged: (i) {
+                          if (!_touring && _selected != i) {
+                            HapticFeedback.selectionClick();
+                          }
+                          setState(() => _selected = i);
                         },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: _DiscoveryCard(
-                            discovery: _discoveries[i],
-                            highlighted: _selected == i,
-                            onOpen: () =>
-                                TreeDetailScreen.push(context, _discoveries[i]),
+                        itemBuilder: (context, i) => AnimatedBuilder(
+                          animation: _pages,
+                          builder: (context, child) {
+                            final page =
+                                _pages.positions.length == 1 &&
+                                    _pages.position.haveDimensions
+                                ? _pages.page!
+                                : (_selected ?? 0).toDouble();
+                            final distance = (page - i).abs().clamp(0.0, 1.0);
+                            return Transform.scale(
+                              scale: 1 - 0.07 * distance,
+                              child: Opacity(
+                                opacity: 1 - 0.35 * distance,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: _DiscoveryCard(
+                              discovery: _discoveries[i],
+                              highlighted: _selected == i,
+                              onOpen: () => TreeDetailScreen.push(
+                                context,
+                                _discoveries[i],
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 14),
+                  const SizedBox(height: 14),
 
-                // ---------------------------------------------------- nav
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: ForestBottomNav(
-                    currentIndex: ForestBottomNav.exploreIndex,
-                    onSelect: (i) => openForestTab(
-                      context,
-                      i,
-                      current: ForestBottomNav.exploreIndex,
+                  // ---------------------------------------------------- nav
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: ForestBottomNav(
+                      currentIndex: ForestBottomNav.exploreIndex,
+                      onSelect: (i) => openForestTab(
+                        context,
+                        i,
+                        current: ForestBottomNav.exploreIndex,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
